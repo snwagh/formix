@@ -2,7 +2,6 @@
 import asyncio
 import json
 import signal
-import sys
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -13,7 +12,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 
-from ..core.node import NodeManager, HeavyNode, LightNode
+from ..core.node import HeavyNode, LightNode, NodeManager
 from ..db.database import NetworkDatabase, NodeDatabase
 from ..utils.config import FORMIX_HOME, setup_logging
 from ..utils.helpers import generate_uid
@@ -87,49 +86,49 @@ async def run_node_with_cleanup(uid: str, node_type: str, port: int):
     """Run a node in the foreground with proper cleanup on exit."""
     node = None
     shutdown_event = asyncio.Event()
-    
+
     async def cleanup():
         """Clean up node resources."""
         console.print(f"\n[yellow]Shutting down node {uid}...[/yellow]")
-        
+
         # Remove from network database
         db = NetworkDatabase()
         await db.remove_node(uid)
-        
+
         # Clean up node directory
         node_db = NodeDatabase(uid)
         node_db.cleanup()
-        
+
         console.print(f"[green]✓[/green] Cleaned up node {uid}")
         shutdown_event.set()
-    
+
     def signal_handler(sig, frame):
         """Handle interrupt signals."""
         asyncio.create_task(cleanup())
-    
+
     # Register signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     try:
         # Create and start the node
         if node_type == "heavy":
             node = HeavyNode(uid, port)
         else:
             node = LightNode(uid, port)
-        
+
         console.print(f"[cyan]Node {uid} running on port {port}. Press Ctrl+C to stop.[/cyan]")
-        
+
         # Run the node
         node_task = asyncio.create_task(node.start())
         shutdown_task = asyncio.create_task(shutdown_event.wait())
-        
+
         # Wait for either the node to crash or shutdown signal
         done, pending = await asyncio.wait(
             [node_task, shutdown_task],
             return_when=asyncio.FIRST_COMPLETED
         )
-        
+
         # Cancel remaining tasks
         for task in pending:
             task.cancel()
@@ -137,7 +136,7 @@ async def run_node_with_cleanup(uid: str, node_type: str, port: int):
                 await task
             except asyncio.CancelledError:
                 pass
-                
+
     except Exception as e:
         console.print(f"[red]Error running node: {e}[/red]")
     finally:
@@ -178,59 +177,59 @@ async def stop_existing_node(uid: str):
 async def stop_all_nodes():
     """Stop all nodes in the network."""
     console.print(Panel("[bold red]Stop All Nodes[/bold red]"))
-    
+
     db = NetworkDatabase()
     await db.initialize()
-    
+
     # Get all active nodes
     nodes = await db.get_all_nodes()
-    
+
     if not nodes:
         console.print("[yellow]No nodes found in the network[/yellow]")
         return
-    
+
     # Confirm action
     console.print(f"Found [bold]{len(nodes)}[/bold] nodes in the network:")
     for node in nodes:
         console.print(f"  • {node['uid']} ({node['node_type']}) on port {node['port']}")
-    
+
     if not Confirm.ask(f"\nAre you sure you want to stop [bold red]ALL {len(nodes)} nodes[/bold red]?"):
         console.print("Cancelled")
         return
-    
+
     # Stop all nodes
     manager = NodeManager()
     stopped_count = 0
     failed_count = 0
-    
+
     console.print("\n[bold]Stopping nodes...[/bold]")
-    
+
     for node in nodes:
         uid = node['uid']
         try:
             # Stop the node process
             await manager.stop_node(uid)
-            
+
             # Remove from network database
             await db.remove_node(uid)
-            
+
             # Clean up node directory
             node_db = NodeDatabase(uid)
             node_db.cleanup()
-            
+
             console.print(f"[green]✓[/green] Stopped node [bold]{uid}[/bold]")
             stopped_count += 1
-            
+
         except Exception as e:
             console.print(f"[red]✗[/red] Failed to stop node [bold]{uid}[/bold]: {e}")
             failed_count += 1
-    
+
     # Summary
-    console.print(f"\n[bold]Summary:[/bold]")
+    console.print("\n[bold]Summary:[/bold]")
     console.print(f"  Stopped: [green]{stopped_count}[/green]")
     if failed_count > 0:
         console.print(f"  Failed: [red]{failed_count}[/red]")
-    
+
     if stopped_count > 0:
         console.print(f"\n[green]✓[/green] Successfully stopped [bold]{stopped_count}[/bold] nodes and cleaned up resources")
 
