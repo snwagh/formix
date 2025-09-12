@@ -74,9 +74,10 @@ async def create_new_node(node_type: str | None = None, background: bool = True)
     console.print(f"[green]✓[/green] Created {node_type} node: [bold]{uid}[/bold] on port [cyan]{port}[/cyan]")
 
     if background:
-        # Start the node in background (existing behavior)
+        # Start the node in background and exit immediately
         manager = NodeManager()
         await manager.start_node(uid, node_type, port)
+        console.print(f"[cyan]Node {uid} started in background[/cyan]")
     else:
         # Run the node in foreground with cleanup
         await run_node_with_cleanup(uid, node_type, port)
@@ -284,38 +285,35 @@ async def create_new_computation():
         console.print("[red]No nodes available in the network[/red]")
         return
 
-    # Show available nodes
-    console.print("\n[bold]Available Nodes:[/bold]")
-    for node in all_nodes:
-        console.print(f"  {node['uid']} ({node['node_type']})")
-
-    # Get proposing node
-    proposer_uid = Prompt.ask("\nProposing node UID")
-    proposer = await db.get_node(proposer_uid)
-    if not proposer:
-        console.print(f"[red]Node {proposer_uid} not found[/red]")
-        return
-
     # Get heavy nodes
     heavy_nodes = await db.get_nodes_by_type("heavy")
     if len(heavy_nodes) < 3:
         console.print(f"[red]Need at least 3 heavy nodes, found {len(heavy_nodes)}[/red]")
         return
 
-    console.print("\n[bold]Available Heavy Nodes:[/bold]")
-    for node in heavy_nodes:
-        console.print(f"  {node['uid']}")
+    # Randomly select 3 heavy nodes
+    import random
+    selected_heavy_nodes = random.sample(heavy_nodes, 3)
+    heavy_uids = [node['uid'] for node in selected_heavy_nodes]
 
-    heavy_uids = []
-    for i in range(3):
-        uid = Prompt.ask(f"Heavy node {i+1} UID")
-        if uid not in [n['uid'] for n in heavy_nodes]:
-            console.print(f"[red]{uid} is not a heavy node[/red]")
+    console.print(f"[green]✓[/green] Randomly selected 3 heavy nodes:")
+    for i, node in enumerate(selected_heavy_nodes, 1):
+        console.print(f"  {i}. {node['uid']} (port {node['port']})")
+
+    # Get proposing node (use first light node or prompt)
+    light_nodes = await db.get_nodes_by_type("light")
+    if light_nodes:
+        proposer_uid = light_nodes[0]['uid']
+        console.print(f"[green]✓[/green] Using proposer: {proposer_uid}")
+    else:
+        proposer_uid = Prompt.ask("\nProposing node UID")
+        proposer = await db.get_node(proposer_uid)
+        if not proposer:
+            console.print(f"[red]Node {proposer_uid} not found[/red]")
             return
-        heavy_uids.append(uid)
 
     # Get computation details
-    computation_prompt = Prompt.ask("\nComputation prompt")
+    computation_prompt = Prompt.ask("\nComputation prompt", default="Privacy-preserving average computation")
 
     # For PoC, restrict to single number schema
     console.print("\n[yellow]Note: For this PoC, response schema must be a single number[/yellow]")
@@ -343,7 +341,7 @@ async def create_new_computation():
     # Get minimum participants
     min_participants = IntPrompt.ask(
         "Minimum number of participants",
-        default=1,
+        default=5,
         show_default=True
     )
 

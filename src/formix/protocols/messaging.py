@@ -255,9 +255,14 @@ class MessageQueue:
                     logger.warning(f"No processor registered for message type: {message.type}")
 
             except TimeoutError:
-                continue
+                continue  # Continue the loop to check self.running
+            except asyncio.CancelledError:
+                logger.info("Message processing cancelled")
+                break
             except Exception as e:
                 logger.error(f"Unexpected error in message processing: {e}")
+                if not self.running:
+                    break
 
     def stop_processing(self):
         """Stop processing messages."""

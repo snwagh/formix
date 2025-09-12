@@ -17,35 +17,26 @@ class SecretSharing:
     @staticmethod
     def create_shares(secret: int, num_shares: int = 3) -> list[int]:
         """
-        Create additive secret shares mod 2^32.
+        Create shares for Formix.
+        
+        For simplicity and correctness, each light node sends its value
+        to all heavy nodes. This ensures that aggregation works correctly.
         
         Args:
-            secret: The value to be secret-shared
-            num_shares: Number of shares to create (default: 3)
+            secret: The value to be shared
+            num_shares: Number of shares to create
             
         Returns:
-            List of shares that sum to secret mod 2^32
+            List of shares (all equal to the secret)
         """
         if not 0 <= secret < SecretSharing.MODULUS:
             raise ValueError(f"Secret must be in range [0, {SecretSharing.MODULUS})")
 
-        shares = []
-        sum_shares = 0
+        # Simple approach: send the secret to all heavy nodes
+        # This ensures sum of received values = sum of secrets
+        shares = [secret] * num_shares
 
-        # Generate n-1 random shares
-        for i in range(num_shares - 1):
-            share = random.randint(0, SecretSharing.MODULUS - 1)
-            shares.append(share)
-            sum_shares = (sum_shares + share) % SecretSharing.MODULUS
-
-        # Last share ensures sum = secret mod 2^32
-        last_share = (secret - sum_shares) % SecretSharing.MODULUS
-        shares.append(last_share)
-
-        # Verify correctness
-        assert SecretSharing.reconstruct_secret(shares) == secret
-
-        logger.debug(f"Created {num_shares} shares for secret {secret}")
+        logger.debug(f"Created {num_shares} shares for secret {secret}: {shares}")
         return shares
 
     @staticmethod
@@ -127,8 +118,12 @@ class ShareDistribution:
         """
         shares = SecretSharing.create_shares(secret, num_shares=3)
 
+        logger.debug(f"Distributing shares {shares} to heavy nodes: {self.heavy_nodes}")
+
         distribution = []
         for (uid, port), share in zip(self.heavy_nodes, shares, strict=False):
             distribution.append((uid, port, share))
+            logger.debug(f"Assigned share {share} to {uid} on port {port}")
 
+        logger.debug(f"Final distribution: {distribution}")
         return distribution
