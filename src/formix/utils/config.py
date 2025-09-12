@@ -64,7 +64,7 @@ def setup_node_logging(node_uid: str):
     )
     
     # Node-specific file logging
-    node_log_file = FORMIX_HOME / node_uid / "logs.log"
+    node_log_file = FORMIX_HOME / "Nodes" / node_uid / "logs.log"
     node_log_file.parent.mkdir(parents=True, exist_ok=True)
     
     logger.add(

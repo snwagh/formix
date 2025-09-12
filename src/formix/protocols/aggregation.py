@@ -32,13 +32,17 @@ class SecureAggregation:
         return list(self.received_shares.keys())
 
     def compute_partial_sum(self) -> int:
-        """Compute the sum of all received shares."""
+        """Compute the sum of all received shares for Formix."""
         if not self.can_aggregate():
             raise ValueError(f"Insufficient participants: {len(self.received_shares)} < {self.min_participants}")
 
-        partial_sum = sum(self.received_shares.values()) % SecretSharing.MODULUS
-        logger.info(f"Computed partial sum for {len(self.received_shares)} participants")
-        return partial_sum
+        # With the simple sharing approach, each share equals the original value
+        # So the sum of all received shares equals the sum of all original values
+        share_values = list(self.received_shares.values())
+        total_sum = sum(share_values)
+        
+        logger.info(f"Computed total sum: {total_sum} from {len(share_values)} shares")
+        return total_sum
 
     @staticmethod
     def compute_average(total_sum: int, num_participants: int) -> float:
@@ -55,14 +59,8 @@ class SecureAggregation:
         if num_participants == 0:
             raise ValueError("Cannot compute average with 0 participants")
 
-        # Handle potential overflow by using float division
+        # Compute average
         average = total_sum / num_participants
 
-        # If the sum is large due to modular arithmetic, adjust
-        if average > 100:  # Since our values are 0-100
-            # This might happen due to modular arithmetic
-            # In a real system, we'd handle this more carefully
-            logger.warning(f"Large average detected: {average}, adjusting...")
-            average = average % 101  # Simple adjustment for PoC
-
+        logger.info(f"Computed average: {average} from sum {total_sum} / {num_participants}")
         return average

@@ -134,3 +134,22 @@ dmypy.json
 
 # UV
 uv.lock
+
+# Formix specific
+# Database files
+*.db
+*.db-*
+*.db.lock
+network.db*
+formix.log
+
+# Node directories and data
+~/.formix/
+Nodes/
+*.db-wal
+*.db-shm
+
+# Test artifacts
+test_results/
+benchmark_results/
+performance_logs/

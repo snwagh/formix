@@ -51,6 +51,7 @@ class BaseNode(ABC):
         """Setup HTTP routes for the node."""
         self.app.router.add_post('/message', self.handle_message)
         self.app.router.add_get('/health', self.handle_health)
+        self.app.router.add_post('/shutdown', self.handle_shutdown)
 
     async def handle_health(self, request):
         """Health check endpoint."""
@@ -58,6 +59,34 @@ class BaseNode(ABC):
             'status': 'ok',
             'node_id': self.uid,
             'node_status': self.status.value
+        })
+
+    async def handle_shutdown_message(self, payload: dict[str, Any]):
+        """Handle shutdown message."""
+        logger.info(f"Node {self.uid} received shutdown message: {payload}")
+        self.status = NodeStatus.STOPPING
+        
+        # Set shutdown event to trigger graceful shutdown
+        if hasattr(self, 'shutdown_event'):
+            self.shutdown_event.set()
+        
+        return web.json_response({
+            'status': 'shutting_down',
+            'node_id': self.uid
+        })
+
+    async def handle_shutdown(self, request):
+        """Shutdown endpoint for graceful shutdown."""
+        logger.info(f"Node {self.uid} received shutdown request")
+        self.status = NodeStatus.STOPPING
+        
+        # Set shutdown event to trigger graceful shutdown
+        if hasattr(self, 'shutdown_event'):
+            self.shutdown_event.set()
+        
+        return web.json_response({
+            'status': 'shutting_down',
+            'node_id': self.uid
         })
 
     async def handle_message(self, request):
@@ -74,6 +103,8 @@ class BaseNode(ABC):
                 await self.handle_share(message.payload)
             elif message.type == "aggregate_request":
                 await self.handle_aggregate_request(message.payload)
+            elif message.type == "shutdown":
+                return await self.handle_shutdown_message(message.payload)
             else:
                 logger.warning(f"Unknown message type: {message.type}")
 
@@ -99,17 +130,50 @@ class BaseNode(ABC):
     async def start(self):
         """Start the node server."""
         self.status = NodeStatus.ACTIVE
+        
+        # Check if node is already registered in the network database
+        node_type = "heavy" if isinstance(self, HeavyNode) else "light"
+        existing_node = await self.network_db.get_node(self.uid)
+        
+        if existing_node:
+            logger.info(f"Node {self.uid} already registered in network database")
+        else:
+            # Register this node in the network database
+            success = await self.network_db.add_node(self.uid, node_type, self.port)
+            if success:
+                logger.info(f"Registered {node_type} node {self.uid} on port {self.port} in network database")
+            else:
+                logger.warning(f"Failed to register node {self.uid} in network database (might be already registered)")
+        
         runner = web.AppRunner(self.app)
         await runner.setup()
         site = web.TCPSite(runner, 'localhost', self.port)
         await site.start()
         logger.info(f"Node {self.uid} started on port {self.port}")
 
+        # Create shutdown event for graceful shutdown
+        self.shutdown_event = asyncio.Event()
+
         # Keep the server running
         try:
-            await asyncio.Event().wait()
+            while not self.shutdown_event.is_set():
+                await asyncio.sleep(0.1)  # Small sleep to prevent busy waiting
         except asyncio.CancelledError:
             logger.info(f"Node {self.uid} shutting down...")
+            
+            # Cancel any pending aggregation tasks (only for heavy nodes)
+            if hasattr(self, 'aggregation_tasks') and self.aggregation_tasks:
+                for task in self.aggregation_tasks.values():
+                    if not task.done():
+                        task.cancel()
+                
+                # Wait for tasks to complete
+                await asyncio.gather(*self.aggregation_tasks.values(), return_exceptions=True)
+            
+            await runner.cleanup()
+            self.status = NodeStatus.STOPPED
+        except Exception as e:
+            logger.error(f"Unexpected error in node {self.uid}: {e}")
             await runner.cleanup()
             self.status = NodeStatus.STOPPED
 
@@ -121,10 +185,18 @@ class HeavyNode(BaseNode):
         super().__init__(uid, port)
         self.active_computations = {}  # comp_id -> SecureAggregation
         self.aggregation_tasks = {}  # comp_id -> asyncio.Task
+        self.processed_computations = set()  # Track processed computations
 
     async def handle_computation(self, computation: dict[str, Any]):
         """Handle new computation - broadcast to light nodes."""
         comp_id = computation['comp_id']
+
+        # Check if already processed
+        if comp_id in self.processed_computations:
+            logger.warning(f"Already processed computation {comp_id}")
+            return
+
+        self.processed_computations.add(comp_id)
 
         # Log the computation
         await self.db.log_action(comp_id, "received_computation", computation)
@@ -284,15 +356,22 @@ class LightNode(BaseNode):
         self.processed_computations.add(comp_id)
 
         # Log the computation
-        await self.db.log_action(comp_id, "received_computation", computation)
+        try:
+            await self.db.log_action(comp_id, "received_computation", computation)
+        except Exception as e:
+            logger.error(f"Failed to log computation action: {e}")
 
         # For PoC, automatically approve and respond with random number
         response_value = random.randint(0, 100)
 
         logger.info(f"Node {self.uid} responding to computation {comp_id} with value {response_value}")
 
-        # Store response locally
-        await self.db.add_response(comp_id, response_value)
+        # Store response locally (only if not already stored)
+        try:
+            await self.db.add_response(comp_id, response_value)
+        except Exception as e:
+            logger.warning(f"Response already exists for computation {comp_id}: {e}")
+            # Continue with share creation even if response storage fails
 
         # Create secret shares
         heavy_nodes = [
@@ -301,8 +380,15 @@ class LightNode(BaseNode):
             (computation['heavy_node_3'], await self._get_node_port(computation['heavy_node_3']))
         ]
 
+        logger.debug(f"Light node {self.uid} heavy_nodes: {heavy_nodes}")
+
         distribution = ShareDistribution(heavy_nodes)
         shares_distribution = distribution.distribute(response_value)
+
+        logger.debug(f"Light node {self.uid} shares_distribution: {shares_distribution}")
+
+        # Add small random delay to reduce database contention
+        await asyncio.sleep(random.uniform(0.01, 0.1))
 
         # Send shares to heavy nodes
         for node_uid, node_port, share_value in shares_distribution:
@@ -314,19 +400,38 @@ class LightNode(BaseNode):
 
             try:
                 await MessageProtocol.send_message(node_port, message)
-                logger.debug(f"Sent share to heavy node {node_uid}")
+                logger.debug(f"Sent share {share_value} to heavy node {node_uid} on port {node_port}")
             except Exception as e:
                 logger.error(f"Failed to send share to {node_uid}: {e}")
 
-        await self.db.log_action(comp_id, "sent_shares", {
-            'response_value': response_value,
-            'heavy_nodes': [uid for uid, _, _ in shares_distribution]
-        })
+        try:
+            await self.db.log_action(comp_id, "sent_shares", {
+                'response_value': response_value,
+                'heavy_nodes': [uid for uid, _, _ in shares_distribution]
+            })
+        except Exception as e:
+            logger.error(f"Failed to log share action: {e}")
 
     async def _get_node_port(self, uid: str) -> int:
         """Get port for a node by UID."""
-        node = await self.network_db.get_node(uid)
-        return node['port'] if node else 0
+        # Add retry logic for node lookup
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                node = await self.network_db.get_node(uid)
+                if node:
+                    logger.debug(f"Found node {uid} on port {node['port']} (attempt {attempt + 1})")
+                    return node['port']
+                else:
+                    logger.warning(f"Node {uid} not found in network database (attempt {attempt + 1})")
+            except Exception as e:
+                logger.error(f"Error looking up node {uid} (attempt {attempt + 1}): {e}")
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+        
+        logger.error(f"Node {uid} not found after {max_retries} attempts")
+        raise ValueError(f"Node {uid} not found")
 
 
 class NodeManager:
@@ -346,7 +451,7 @@ class NodeManager:
             process = Process(target=self._run_heavy_node, args=(uid, port))
         else:
             process = Process(target=self._run_light_node, args=(uid, port))
-
+        
         process.start()
         self.processes[uid] = process
         logger.info(f"Started {node_type} node {uid} as process {process.pid}")
