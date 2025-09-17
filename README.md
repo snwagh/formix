@@ -5,6 +5,7 @@ A proof-of-concept implementation of a privacy-preserving distributed computatio
 ## Overview
 
 Formix implements a two-tier network architecture:
+
 - **Heavy Nodes**: Coordinators that manage computations and perform secure aggregation
 - **Light Nodes**: Data providers that compute on their private data and send secret-shared results
 
@@ -105,7 +106,7 @@ Heavy node 3 UID: NODE-GHI789
 Computation prompt: Calculate average user satisfaction score
 
 Note: For this PoC, response schema must be a single number
-Response schema (JSON) [{"type": "number"}]: 
+Response schema (JSON) [{"type": "number"}]:
 
 Deadline (seconds from now) [60]: 30
 Minimum number of participants [1]: 2
@@ -123,13 +124,13 @@ Are you sure you want to stop node NODE-JKL012? [y/N]: y
 
 ## CLI Commands
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `formix new-node` | `formix nn` | Create a new node |
-| `formix stop-node <uid>` | `formix sn <uid>` | Stop a node and clean up |
-| `formix view` | `formix v` | View network status |
-| `formix comp` | `formix c` | Create a new computation |
-| `formix status [comp_id]` | - | View computation status |
+| Command                   | Alias             | Description              |
+| ------------------------- | ----------------- | ------------------------ |
+| `formix new-node`         | `formix nn`       | Create a new node        |
+| `formix stop-node <uid>`  | `formix sn <uid>` | Stop a node and clean up |
+| `formix view`             | `formix v`        | View network status      |
+| `formix comp`             | `formix c`        | Create a new computation |
+| `formix status [comp_id]` | -                 | View computation status  |
 
 ## Architecture
 
@@ -172,10 +173,12 @@ pytest tests/test_secret_sharing.py
 ### Logging
 
 Logs are written to:
+
 - Console (INFO level by default)
 - `~/.formix/formix.log` (DEBUG level)
 
 Set log level with environment variable:
+
 ```bash
 export FORMIX_LOG_LEVEL=DEBUG
 formix view
@@ -206,6 +209,21 @@ This is a proof-of-concept with several limitations:
 ## Contributing
 
 This is a proof-of-concept project. Feel free to experiment and extend!
+
+## Changelog
+
+### 2025-09-17 - Database Integration & Testing Suite
+
+#### Added
+
+- **`comprehensive_test_suite_with_db.py`**: Complete database integration test suite with 25 test cases covering all system components
+- **`test_basic.py`**: Basic demonstration script professionalized with generic terminology (User 1/User 2 instead of personal names)
+
+#### Features
+
+- Database persistence for all computations and secret shares in SQLite
+- Security validation proving individual database entries reveal nothing about user secrets
+- Clean, professional code suitable for production environments
 
 ## License
 
