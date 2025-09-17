@@ -26,6 +26,8 @@ class SecretSharing:
         Returns:
             List of shares that sum to secret mod 2^32
         """
+        if num_shares < 2:
+            raise ValueError("Number of shares must be at least 2")
         if not 0 <= secret < SecretSharing.MODULUS:
             raise ValueError(f"Secret must be in range [0, {SecretSharing.MODULUS})")
 
