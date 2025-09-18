@@ -133,8 +133,8 @@ class NetworkDatabase:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     INSERT INTO computations (
-                        comp_id, proposer_uid, heavy_node_1, heavy_node_2, 
-                        heavy_node_3, computation_prompt, response_schema, 
+                        comp_id, proposer_uid, heavy_node_1, heavy_node_2,
+                        heavy_node_3, computation_prompt, response_schema,
                         deadline, min_participants
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
@@ -161,12 +161,23 @@ class NetworkDatabase:
         """Update computation with final result."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                UPDATE computations 
+                UPDATE computations
                 SET status = 'completed', result = ?, participants_count = ?,
                     completed_at = CURRENT_TIMESTAMP
                 WHERE comp_id = ?
             """, (result, participants_count, comp_id))
             await db.commit()
+
+    async def get_computation(self, comp_id: str) -> dict[str, Any] | None:
+        """Fetch a computation row by comp_id."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM computations WHERE comp_id = ?",
+                (comp_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
 
 class NodeDatabase:
@@ -237,7 +248,7 @@ class NodeDatabase:
         """Add a received share (for heavy nodes)."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR REPLACE INTO received_shares 
+                INSERT OR REPLACE INTO received_shares
                 (comp_id, sender_uid, share_value) VALUES (?, ?, ?)
             """, (comp_id, sender_uid, share_value))
             await db.commit()
@@ -247,8 +258,8 @@ class NodeDatabase:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
-                SELECT * FROM received_shares 
-                WHERE comp_id = ? 
+                SELECT * FROM received_shares
+                WHERE comp_id = ?
                 ORDER BY timestamp
             """, (comp_id,))
             rows = await cursor.fetchall()
@@ -258,7 +269,7 @@ class NodeDatabase:
         """Add a computation response (for light nodes)."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO computation_responses 
+                INSERT INTO computation_responses
                 (comp_id, response_value) VALUES (?, ?)
             """, (comp_id, response_value))
             await db.commit()
@@ -268,7 +279,7 @@ class NodeDatabase:
         import json
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO computation_log 
+                INSERT INTO computation_log
                 (comp_id, action, details) VALUES (?, ?, ?)
             """, (comp_id, action, json.dumps(details)))
             await db.commit()

@@ -37,10 +37,10 @@ class BaseNode(ABC):
         self.uid = uid
         self.port = port
         self.status = NodeStatus.STARTING
-        
+
         # Setup per-node logging
         setup_node_logging(uid)
-        
+
         self.db = NodeDatabase(uid)
         self.network_db = NetworkDatabase()
         self.server = None
@@ -256,12 +256,13 @@ class HeavyNode(BaseNode):
 
     async def _get_computation_details(self, comp_id: str) -> dict[str, Any]:
         """Get computation details from database."""
-        # This would query the network database
-        # For now, return a placeholder
+        computation = await self.network_db.get_computation(comp_id)
+        if not computation:
+            raise ValueError(f"Computation {comp_id} not found in network database")
         return {
-            'heavy_node_1': self.uid,
-            'heavy_node_2': 'HEAVY002',
-            'heavy_node_3': 'HEAVY003'
+            'heavy_node_1': computation['heavy_node_1'],
+            'heavy_node_2': computation['heavy_node_2'],
+            'heavy_node_3': computation['heavy_node_3']
         }
 
 
