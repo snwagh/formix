@@ -27,18 +27,11 @@ NUM_SHARES = 3
 
 
 def setup_logging():
-    """Configure loguru logging."""
+    """Configure loguru logging for CLI - file only."""
     logger.remove()  # Remove default handler
 
-    # Console logging
-    logger.add(
-        sys.stderr,
-        format=LOG_FORMAT,
-        level=LOG_LEVEL,
-        colorize=True
-    )
-
-    # File logging
+    # Only file logging for CLI
+    FORMIX_HOME.mkdir(parents=True, exist_ok=True)
     log_file = FORMIX_HOME / "formix.log"
     logger.add(
         log_file,
@@ -51,22 +44,21 @@ def setup_logging():
 
 
 def setup_node_logging(node_uid: str):
-    """Configure per-node logging that writes to both stdout and node-specific log file."""
+    """Configure per-node logging - file AND console for debugging."""
     # Remove existing handlers to avoid duplicates
     logger.remove()
-    
-    # Console logging (stdout for node logs)
+
+    # Console logging for debugging
     logger.add(
-        sys.stdout,  # Changed to stdout for node processes
-        format=f"<green>{{time:YYYY-MM-DD HH:mm:ss}}</green> | <level>{{level: <8}}</level> | <cyan>[{node_uid}]</cyan> - <level>{{message}}</level>",
-        level=LOG_LEVEL,
-        colorize=True
+        sys.stderr,
+        format=f"<green>{{time:HH:mm:ss}}</green> | <level>{{level: <8}}</level> | <cyan>[{node_uid[:8]}]</cyan> - <level>{{message}}</level>",
+        level="INFO"
     )
-    
+
     # Node-specific file logging
-    node_log_file = FORMIX_HOME / node_uid / "logs.log"
+    node_log_file = FORMIX_HOME / "Nodes" / node_uid / "logs.log"
     node_log_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     logger.add(
         node_log_file,
         format=f"{{time:YYYY-MM-DD HH:mm:ss}} | {{level: <8}} | [{node_uid}] - {{message}}",

@@ -46,7 +46,8 @@ class MessageProtocol:
     async def send_message(
         target_port: int,
         message: Message,
-        timeout: float | None = None
+        timeout: float | None = None,
+        suppress_warnings: bool = False
     ) -> dict[str, Any]:
         """
         Send a message to a specific node.
@@ -78,11 +79,14 @@ class MessageProtocol:
                             logger.warning(f"Error response from {target_port}: {response.status} - {error_text}")
 
             except aiohttp.ClientConnectorError:
-                logger.warning(f"Failed to connect to port {target_port} (attempt {attempt + 1})")
+                if not suppress_warnings:
+                    logger.warning(f"Failed to connect to port {target_port} (attempt {attempt + 1})")
             except TimeoutError:
-                logger.warning(f"Timeout sending message to port {target_port} (attempt {attempt + 1})")
+                if not suppress_warnings:
+                    logger.warning(f"Timeout sending message to port {target_port} (attempt {attempt + 1})")
             except Exception as e:
-                logger.error(f"Unexpected error sending to port {target_port}: {e}")
+                if not suppress_warnings:
+                    logger.error(f"Unexpected error sending to port {target_port}: {e}")
 
             # Wait before retry
             if attempt < MessageProtocol.MAX_RETRIES - 1:
@@ -169,8 +173,8 @@ class MessageValidator:
                        "heavy_node_3", "computation_prompt", "response_schema",
                        "deadline", "min_participants"],
         "share": ["comp_id", "sender_uid", "share_value"],
-        "aggregate_request": ["comp_id", "sender_uid", "partial_sum", "participant_count"],
-        "aggregate_response": ["comp_id", "sender_uid", "partial_sum", "status"]
+        "reveal_request": ["comp_id", "sender_uid"],
+        "reveal_response": ["comp_id", "sender_uid", "partial_sum", "participant_count"]
     }
 
     @staticmethod
