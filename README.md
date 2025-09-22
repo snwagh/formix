@@ -119,7 +119,7 @@ class FormixNetwork:
 ```python
 async with FormixNetwork() as network:
     await network.start_network(heavy_count=3, light_count=5)
-    comp_id = await network.propose_computation("Your prompt here")
+    comp_id = await network.propose_computation("What is your average sleep score from last year", deadline_seconds=30)
     result = await network.wait_for_computation(comp_id)
     # Network automatically shuts down when context exits
 ```
@@ -139,6 +139,25 @@ result = await quick_computation(network, "Your prompt", wait=True)
 ## Examples
 
 ### Basic Example
+
+```bash
+uv run python -m asyncio
+
+
+from src.formix import FormixNetwork
+
+network = FormixNetwork()
+await network.start_network(heavy_count=3, light_count=5)
+
+comp_id = await network.propose_computation("What was your average sleep score form the last year?", deadline_seconds=30, min_participants=2)
+
+result = await network.wait_for_computation(comp_id)
+print(f"Result: {result['result']}")
+print(f"Participants: {result['participants_count']}")
+
+await network.shutdown()
+```
+
 
 ```python
 import asyncio

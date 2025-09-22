@@ -314,11 +314,8 @@ class HeavyNode(BaseNode):
                 if failed_nodes:
                     logger.warning(f"Failed nodes: {failed_nodes}")
 
-            # Wait a bit for responses to arrive
-            await asyncio.sleep(2.0)
-
-            # Attempt final reconstruction
-            await self._attempt_final_reconstruction(comp_id)
+            # Note: Final reconstruction happens automatically when reveal responses arrive
+            # via _process_reveal_response, so no need to call it here
 
         except Exception as e:
             logger.error(f"Error in reveal process initiation for {comp_id}: {e}")
