@@ -48,7 +48,7 @@ class NetworkDatabase:
                     deadline TIMESTAMP,
                     min_participants INTEGER,
                     status TEXT DEFAULT 'pending',
-                    result REAL,
+                    result INTEGER,
                     participants_count INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     completed_at TIMESTAMP,
@@ -133,8 +133,8 @@ class NetworkDatabase:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
                     INSERT INTO computations (
-                        comp_id, proposer_uid, heavy_node_1, heavy_node_2, 
-                        heavy_node_3, computation_prompt, response_schema, 
+                        comp_id, proposer_uid, heavy_node_1, heavy_node_2,
+                        heavy_node_3, computation_prompt, response_schema,
                         deadline, min_participants
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
@@ -156,17 +156,56 @@ class NetworkDatabase:
             return False
 
     async def update_computation_result(
-        self, comp_id: str, result: float, participants_count: int
+        self, comp_id: str, result: int, participants_count: int
     ):
         """Update computation with final result."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                UPDATE computations 
+                UPDATE computations
                 SET status = 'completed', result = ?, participants_count = ?,
                     completed_at = CURRENT_TIMESTAMP
                 WHERE comp_id = ?
             """, (result, participants_count, comp_id))
             await db.commit()
+            logger.info(f"Updated computation {comp_id} with result {result} and {participants_count} participants")
+
+    async def update_computation_status(
+        self, comp_id: str, status: str, error_message: str = None
+    ):
+        """Update computation status (e.g., failed)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            if error_message:
+                await db.execute("""
+                    UPDATE computations
+                    SET status = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE comp_id = ?
+                """, (f"{status}: {error_message}", comp_id))
+            else:
+                await db.execute("""
+                    UPDATE computations
+                    SET status = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE comp_id = ?
+                """, (status, comp_id))
+            await db.commit()
+            logger.info(f"Updated computation {comp_id} status to {status}")
+
+    async def get_computation(self, comp_id: str) -> dict[str, Any] | None:
+        """Fetch a computation row by comp_id."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM computations WHERE comp_id = ?",
+                (comp_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def clear_all_computations(self):
+        """Clear all computations from the database."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM computations")
+            await db.commit()
+            logger.info("Cleared all computations from database")
 
 
 class NodeDatabase:
@@ -237,7 +276,7 @@ class NodeDatabase:
         """Add a received share (for heavy nodes)."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT OR REPLACE INTO received_shares 
+                INSERT OR REPLACE INTO received_shares
                 (comp_id, sender_uid, share_value) VALUES (?, ?, ?)
             """, (comp_id, sender_uid, share_value))
             await db.commit()
@@ -247,8 +286,8 @@ class NodeDatabase:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("""
-                SELECT * FROM received_shares 
-                WHERE comp_id = ? 
+                SELECT * FROM received_shares
+                WHERE comp_id = ?
                 ORDER BY timestamp
             """, (comp_id,))
             rows = await cursor.fetchall()
@@ -258,7 +297,7 @@ class NodeDatabase:
         """Add a computation response (for light nodes)."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO computation_responses 
+                INSERT INTO computation_responses
                 (comp_id, response_value) VALUES (?, ?)
             """, (comp_id, response_value))
             await db.commit()
@@ -268,14 +307,37 @@ class NodeDatabase:
         import json
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO computation_log 
+                INSERT INTO computation_log
                 (comp_id, action, details) VALUES (?, ?, ?)
             """, (comp_id, action, json.dumps(details)))
             await db.commit()
 
     def cleanup(self):
-        """Remove the node's database directory."""
+        """Remove the node's database directory and all associated files."""
         import shutil
-        if self.db_path.parent.exists():
-            shutil.rmtree(self.db_path.parent)
-            logger.info(f"Cleaned up database for node {self.uid}")
+        node_dir = self.db_path.parent
+
+        if node_dir.exists():
+            try:
+                # Close any open database connections first
+                import sqlite3
+                sqlite3.connect(str(self.db_path)).close()
+            except Exception:
+                pass  # Database might not exist or already be closed
+
+            try:
+                # Remove the entire node directory
+                shutil.rmtree(node_dir)
+                logger.info(f"Cleaned up database and directory for node {self.uid}")
+            except PermissionError as e:
+                logger.error(f"Permission error cleaning up node {self.uid}: {e}")
+                # Try to at least remove the database file
+                try:
+                    self.db_path.unlink(missing_ok=True)
+                    logger.info(f"Removed database file for node {self.uid}")
+                except Exception as e2:
+                    logger.error(f"Failed to remove database file: {e2}")
+            except Exception as e:
+                logger.error(f"Error cleaning up node {self.uid}: {e}")
+        else:
+            logger.debug(f"Node directory for {self.uid} does not exist")
