@@ -15,6 +15,7 @@ class SecureAggregation:
         self.heavy_nodes = heavy_nodes  # List of all 3 heavy node UIDs
         self.received_shares = {}  # {sender_uid: share_value}
         self.partial_sums_from_other_nodes = {}  # {heavy_node_uid: partial_sum}
+        self.participants_from_other_nodes = {}  # {heavy_node_uid: participant_count}
 
     def add_share(self, sender_uid: str, share_value: int):
         """Add a share from a light node."""
@@ -55,13 +56,15 @@ class SecureAggregation:
         """Check if this is the first heavy node (responsible for final reconstruction)."""
         return self.get_heavy_node_position() == 0
 
-    def add_partial_sum_from_heavy_node(self, heavy_node_uid: str, partial_sum: int):
+    def add_partial_sum_from_heavy_node(self, heavy_node_uid: str, partial_sum: int, participant_count: int | None = None):
         """Add partial sum received from another heavy node."""
         if heavy_node_uid not in self.heavy_nodes:
             raise ValueError(f"Unknown heavy node: {heavy_node_uid}")
 
         self.partial_sums_from_other_nodes[heavy_node_uid] = partial_sum
         logger.info(f"Received partial sum {partial_sum} from heavy node {heavy_node_uid}")
+        if participant_count is not None:
+            self.participants_from_other_nodes[heavy_node_uid] = participant_count
 
     def can_perform_final_reconstruction(self) -> bool:
         """Check if we have all partial sums needed for final reconstruction."""
@@ -104,9 +107,9 @@ class SecureAggregation:
 
     def get_total_participants(self) -> int:
         """Get total number of participants across all heavy nodes."""
-        # For now, return participants for this heavy node
-        # In a complete implementation, this would aggregate across all heavy nodes
-        return len(self.received_shares)
+        local = len(self.received_shares)
+        remote = sum(self.participants_from_other_nodes.values()) if self.participants_from_other_nodes else 0
+        return local + remote
 
     def meets_anonymity_threshold(self) -> bool:
         """Check if the computation meets the minimum anonymity threshold."""

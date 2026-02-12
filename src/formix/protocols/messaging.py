@@ -81,7 +81,7 @@ class MessageProtocol:
             except aiohttp.ClientConnectorError:
                 if not suppress_warnings:
                     logger.warning(f"Failed to connect to port {target_port} (attempt {attempt + 1})")
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 if not suppress_warnings:
                     logger.warning(f"Timeout sending message to port {target_port} (attempt {attempt + 1})")
             except Exception as e:

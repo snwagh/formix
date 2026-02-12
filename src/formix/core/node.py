@@ -11,7 +11,7 @@ from loguru import logger
 
 from ..db.database import NetworkDatabase, NodeDatabase
 from ..protocols.aggregation import SecureAggregation
-from ..protocols.messaging import Message, MessageProtocol
+from ..protocols.messaging import Message, MessageProtocol, MessageValidator
 from ..protocols.secret_sharing import SecretSharing, ShareDistribution
 from ..utils.config import setup_node_logging
 
@@ -63,6 +63,14 @@ class BaseNode(ABC):
         try:
             data = await request.json()
             message = Message(**data)
+
+            # Validate known message types
+            try:
+                if message.type in MessageValidator.REQUIRED_FIELDS:
+                    MessageValidator.validate_message(message)
+            except ValueError as ve:
+                logger.warning(f"Invalid message payload for type '{message.type}': {ve}")
+                return web.json_response({'status': 'error', 'message': str(ve)}, status=400)
 
             if message.type == "computation":
                 await self.handle_computation(message.payload)
@@ -415,6 +423,7 @@ class HeavyNode(BaseNode):
         comp_id = response_data['comp_id']
         sender_uid = response_data['sender_uid']
         partial_sum = response_data['partial_sum']
+        participant_count = response_data.get('participant_count')
 
         aggregator = self.active_computations.get(comp_id)
         if not aggregator:
@@ -422,7 +431,7 @@ class HeavyNode(BaseNode):
             return
 
         # Add partial sum from other heavy node
-        aggregator.add_partial_sum_from_heavy_node(sender_uid, partial_sum)
+        aggregator.add_partial_sum_from_heavy_node(sender_uid, partial_sum, participant_count)
         logger.info(f"Received partial sum {partial_sum} from heavy node {sender_uid} for computation {comp_id}")
 
         # Check if we can perform final reconstruction
