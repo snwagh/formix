@@ -1,4 +1,4 @@
-# src/formix/network.py
+# src/formix/core/network.py
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
@@ -9,6 +9,7 @@ from loguru import logger
 from .node import HeavyNode, LightNode, NodeManager
 from ..db.database import NetworkDatabase, NodeDatabase
 from ..utils.helpers import generate_uid
+from ..utils.config import setup_logging
 
 
 class FormixNetwork:
@@ -28,6 +29,13 @@ class FormixNetwork:
 
     async def initialize(self):
         """Initialize the network database."""
+        # Ensure file logging is configured for network-level events
+        try:
+            setup_logging()
+        except Exception:
+            # Avoid hard-failing initialization due to logging setup
+            pass
+
         self.network_db = NetworkDatabase()
         await self.network_db.initialize()
 
@@ -315,7 +323,7 @@ class FormixNetwork:
                     asyncio.gather(*self.node_tasks.values(), return_exceptions=True),
                     timeout=5.0
                 )
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 logger.warning("Some nodes did not shutdown gracefully within timeout")
 
         # Clean up database

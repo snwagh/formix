@@ -4,7 +4,7 @@ from typing import Any
 import aiosqlite
 from loguru import logger
 
-from ..utils.config import FORMIX_HOME, NETWORK_DB_PATH
+from ..utils.config import FORMIX_HOME, NETWORK_DB_PATH, DEFAULT_PORT_START
 
 
 class NetworkDatabase:
@@ -124,7 +124,9 @@ class NetworkDatabase:
                 "SELECT MAX(port) as max_port FROM users"
             )
             row = await cursor.fetchone()
-            max_port = row[0] if row[0] else 7999
+            # Start from configured DEFAULT_PORT_START - 1 when no ports exist
+            base_port = DEFAULT_PORT_START - 1
+            max_port = row[0] if row[0] else base_port
             return max_port + 1
 
     async def add_computation(self, computation: dict[str, Any]) -> bool:
